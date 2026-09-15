@@ -170,7 +170,10 @@ final class AIEnhancementSettingsViewModel {
         check(!removal.cachedAddedProviderItems.contains { $0.id == "openai" }, "Removed built-in disappears from added providers")
         removal.selectedProviderID = "ollama"
         removal.settings.selectedProviderID = "ollama"
+        let keySavesBeforeKeylessRemoval = removal.keySaves
+        removal.failKeychain = true
         check(removal.deleteCurrentProvider() && removal.settings.selectedProviderID.isEmpty && removal.settings.selectedModel == nil, "Removing the default clears its model without selecting another provider")
+        check(removal.keySaves == keySavesBeforeKeylessRemoval, "Removing a keyless provider does not require a Keychain write")
         removal.selectedProviderID = "fluid"
         check(!removal.deleteCurrentProvider(), "External provider removal cannot remove private AI")
         let closing = AIEnhancementSettingsViewModel()

@@ -1187,8 +1187,13 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         let deletedDefaultProvider = self.settings.selectedProviderID == deletedProviderID
         let key = self.providerKey(for: deletedProviderID)
         let previousKeys = self.providerAPIKeys
+        let persistedKey = self.managedOriginalKey ?? self.providerAPIKey(for: deletedProviderID)
+        let hadPersistedKey = !persistedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.providerAPIKeys.removeValue(forKey: key)
-        guard self.saveProviderAPIKeys(invalidating: deletedProviderID) else {
+        if key != deletedProviderID {
+            self.providerAPIKeys.removeValue(forKey: deletedProviderID)
+        }
+        if hadPersistedKey, !self.saveProviderAPIKeys(invalidating: deletedProviderID) {
             self.providerAPIKeys = previousKeys
             return false
         }
