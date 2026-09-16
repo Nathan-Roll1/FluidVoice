@@ -2174,7 +2174,8 @@ struct ContentView: View {
         )
     }
 
-    private func completeDictationStopSnapshot(_ snapshot: inout DictationStopSnapshot) {
+    private func completeDictationStopSnapshot(_ stopSnapshot: inout DictationStopSnapshot?) {
+        guard var snapshot = stopSnapshot else { return }
         let windowTitle = snapshot.target.flatMap { self.getFrontmostWindowTitle(ownerPid: $0.pid) }
         var precedingText: String?
         if snapshot.readsContextFromFocusedField,
@@ -2185,6 +2186,7 @@ struct ContentView: View {
             precedingText = TypingService.textBeforeCursorInFocusedField()
         }
         snapshot.completeContext(windowTitle: windowTitle, precedingText: precedingText)
+        stopSnapshot = snapshot
     }
 
     private func prepareStoppedDictationDelivery(_ text: String, keepBackup: Bool, snapshot: DictationStopSnapshot?, needsRestoration: Bool) async -> Bool {
@@ -2684,12 +2686,8 @@ struct ContentView: View {
         let shouldUseAIOnStop = stopSnapshot?.usesAI ?? activeDictationSlot.map {
             DictationAIPostProcessingGate.isConfigured(for: $0, appBundleID: self.recordingAppInfo?.bundleId)
         } ?? DictationAIPostProcessingGate.isConfigured(for: .primary, appBundleID: self.recordingAppInfo?.bundleId)
-        let shouldHideOverlayOnStop = route == .normal &&
-            !wasRewriteMode &&
-            !wasCommandMode &&
-            !promptTest.isActive &&
-            !shouldUseAIOnStop &&
-            !self.settings.spokenSendEnabled
+        let shouldHideOverlayOnStop = route == .normal && !wasRewriteMode && !wasCommandMode
+            && !promptTest.isActive && !shouldUseAIOnStop && !self.settings.spokenSendEnabled
         DebugLogger.shared.info(
             "Routing decision snapshot | activeMode=\(modeAtStop.rawValue) | rewrite=\(wasRewriteMode) | command=\(wasCommandMode) | overlay=\(NotchContentState.shared.mode.rawValue)",
             source: "ContentView"
@@ -2714,10 +2712,7 @@ struct ContentView: View {
             onFinalTranscriptionStarted: stopOverlay.onFinalTranscriptionStarted
         )
         self.appBench("asr_stop_return elapsedMs=\(Int(((ProcessInfo.processInfo.systemUptime - asrStopStartedAt) * 1000).rounded()))")
-        if var snapshot = stopSnapshot {
-            self.completeDictationStopSnapshot(&snapshot)
-            stopSnapshot = snapshot
-        }
+        self.completeDictationStopSnapshot(&stopSnapshot)
         let audioSnapshot = self.asr.consumeLastCompletedAudioSnapshot()
         let transcriptionDurationMilliseconds = self.asr.consumeLastFinalTranscriptionDurationMs()
         DebugLogger.shared.info(
