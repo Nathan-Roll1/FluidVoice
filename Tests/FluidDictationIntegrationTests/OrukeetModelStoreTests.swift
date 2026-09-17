@@ -22,7 +22,7 @@ final class OrukeetModelStoreTests: XCTestCase {
     }
 
     /// Opt-in integration check using the actual pinned Hugging Face archive.
-    func testCompilesPortableBundleAndDetectsMissingComponent() throws {
+    func testCompilesPortableBundleAndDetectsMissingComponent() async throws {
         guard let path = ProcessInfo.processInfo.environment["ORUKEET_COREML_ARCHIVE"] else {
             throw XCTSkip("Set ORUKEET_COREML_ARCHIVE to the pinned baseline ZIP")
         }
@@ -31,6 +31,19 @@ final class OrukeetModelStoreTests: XCTestCase {
         try OrukeetModelStore.installArchive(at: URL(fileURLWithPath: path), to: destination)
         XCTAssertTrue(OrukeetModelStore.installed(at: destination))
         XCTAssertEqual(try OrukeetModelStore.load(from: destination).vocabulary.count, 8192)
+        let missingSource = destination.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+        XCTAssertThrowsError(try OrukeetModelStore.commitInstallation(from: missingSource, to: destination))
+        XCTAssertTrue(OrukeetModelStore.installed(at: destination), "A failed final move must restore the old cache")
+        let cancelled = Task {
+            try OrukeetModelStore.installArchive(at: URL(fileURLWithPath: path), to: destination)
+        }
+        cancelled.cancel()
+        do {
+            try await cancelled.value
+            XCTFail("Cancelled installation succeeded")
+        } catch is CancellationError {
+            XCTAssertTrue(OrukeetModelStore.installed(at: destination))
+        }
         try FileManager.default.removeItem(at: destination.appendingPathComponent("Encoder.mlmodelc"))
         XCTAssertFalse(OrukeetModelStore.installed(at: destination))
         XCTAssertThrowsError(try OrukeetModelStore.load(from: destination))
