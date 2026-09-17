@@ -1,0 +1,38 @@
+name: Orukeet Xcode validation
+on:
+  push:
+    branches: [codex/orukeet-xcode-validation]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: f7c3c8cb2051a982aca7c657a1ef0817ed3874d3
+      - name: Record exact source and toolchain
+        run: |
+          mkdir -p artifacts
+          git rev-parse HEAD | tee artifacts/source-head.txt
+          xcodebuild -version | tee artifacts/xcode-version.txt
+          swift --version | tee artifacts/swift-version.txt
+      - name: Build complete app from PR head
+        run: |
+          set -o pipefail
+          xcodebuild build -project Fluid.xcodeproj -scheme Fluid -configuration Debug -destination "platform=macOS,arch=arm64" -derivedDataPath "$RUNNER_TEMP/DerivedData" -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee artifacts/xcode-build.log
+      - name: Archive actual app for local GUI validation
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/DerivedData/Build/Products/Debug/FluidVoice Debug.app" "artifacts/FluidVoice.zip"
+      - name: Run Orukeet XCTest cases
+        run: |
+          set -o pipefail
+          xcodebuild test -project Fluid.xcodeproj -scheme Fluid -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$RUNNER_TEMP/DerivedData" -onlyUsePackageVersionsFromResolvedFile -only-testing:FluidDictationIntegrationTests/OrukeetModelStoreTests -resultBundlePath "$RUNNER_TEMP/OrukeetTests.xcresult" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO 2>&1 | tee artifacts/xcode-tests.log
+      - name: Upload build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FluidVoice-orukeet-xcode-validation
+          path: artifacts/
+          retention-days: 14
