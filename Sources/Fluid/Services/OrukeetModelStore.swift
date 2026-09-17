@@ -73,14 +73,34 @@ nonisolated enum OrukeetModelStore {
             archive.bytes == archiveBytes, archive.sha256 == archiveSHA256
         else { throw CocoaError(.fileReadCorruptFile) }
         try Task.checkCancellation()
-        progress.report(.downloading(0))
-        let (temporary, archiveResponse) = try await URLSession.shared.download(
-            from: base.appendingPathComponent(archive.filename))
+        let temporary = try await downloadArchive(
+            from: base.appendingPathComponent(archive.filename),
+            expectedBytes: archive.bytes, progress: progress)
         defer { try? FileManager.default.removeItem(at: temporary) }
-        try validateHTTP(archiveResponse)
         try Task.checkCancellation()
         progress.report(.optimizing)
         try installArchive(at: temporary, to: directory)
+    }
+
+    static func downloadArchive(
+        from url: URL, expectedBytes: Int, progress: ModelPreparationProgressRelay
+    ) async throws -> URL {
+        try Task.checkCancellation()
+        progress.report(.downloading(0))
+        let (temporary, response) = try await ProgressiveFileDownloader.download(
+            from: url, configuration: .default
+        ) { written, _ in
+            // The verified manifest supplies a total even when a redirect omits Content-Length.
+            progress.report(.downloading(Double(written) / Double(expectedBytes)))
+        }
+        do {
+            try validateHTTP(response)
+            try Task.checkCancellation()
+            return temporary
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
     }
 
     /// Separate from acquisition so the exact installer can be regression-tested with the pinned archive offline.

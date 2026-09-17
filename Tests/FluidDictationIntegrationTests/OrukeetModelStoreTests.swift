@@ -21,6 +21,31 @@ final class OrukeetModelStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
     }
 
+    /// Use a throttled local HTTP fixture to exercise real download delegate callbacks.
+    func testReportsProgressBeforeDownloadCompletes() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let address = environment["ORUKEET_DOWNLOAD_FIXTURE_URL"],
+              let url = URL(string: address),
+              let size = environment["ORUKEET_DOWNLOAD_FIXTURE_BYTES"].flatMap(Int.init), size > 0
+        else {
+            throw XCTSkip("Set ORUKEET_DOWNLOAD_FIXTURE_URL and ORUKEET_DOWNLOAD_FIXTURE_BYTES")
+        }
+        let intermediate = expectation(description: "Receives progress between zero and completion")
+        intermediate.assertForOverFulfill = false
+        let progress = ModelPreparationProgressRelay { update in
+            if update.phase == .downloading, let fraction = update.fractionCompleted,
+               fraction > 0, fraction < 1
+            {
+                intermediate.fulfill()
+            }
+        }
+        let downloaded = try await OrukeetModelStore.downloadArchive(
+            from: url, expectedBytes: size, progress: progress)
+        defer { try? FileManager.default.removeItem(at: downloaded) }
+        XCTAssertEqual(try downloaded.resourceValues(forKeys: [.fileSizeKey]).fileSize, size)
+        await fulfillment(of: [intermediate], timeout: 1)
+    }
+
     /// Opt-in integration check using the actual pinned Hugging Face archive.
     func testCompilesPortableBundleAndDetectsMissingComponent() async throws {
         guard let path = ProcessInfo.processInfo.environment["ORUKEET_COREML_ARCHIVE"] else {
